@@ -225,6 +225,11 @@ def main():
     else:
         raise Exception('Timed out while waiting for DB socket.')
 
+    try:
+        check_call('systemctl start restd')
+    except:
+        raise Exception('Failed to start restd.')
+
     logging.info('Waiting for cur_hw...')
     for i in range(0, config_timeout):
         if not cur_hw_is_set():
@@ -270,7 +275,6 @@ def main():
             break
     else:
         raise Exception('Timed out while waiting for final hostname.')
-
 
 if __name__ == '__main__':
     main()
