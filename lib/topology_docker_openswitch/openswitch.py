@@ -226,7 +226,7 @@ def main():
         raise Exception('Timed out while waiting for DB socket.')
 
     try:
-        check_output('systemctl start restd')
+        check_output(['systemctl', 'start', 'restd'])
     except CalledProcessError as error:
         raise Exception('Failed to start restd: {}'.format(error.output))
 
