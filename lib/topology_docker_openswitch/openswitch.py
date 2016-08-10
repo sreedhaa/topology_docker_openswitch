@@ -226,9 +226,17 @@ def main():
         raise Exception('Timed out while waiting for DB socket.')
 
     try:
-        check_output(['systemctl', 'start', 'restd'])
-    except CalledProcessError as error:
-        raise Exception('Failed to start restd: {}'.format(error.output))
+        if 'Active: active' not in check_output(
+            ['systemctl', 'status', 'restd']
+        ):
+            try:
+                check_output(['systemctl', 'start', 'restd'])
+            except CalledProcessError as error:
+                raise Exception(
+                    'Failed to start restd: {}'.format(error.output)
+                )
+    except:
+        pass
 
     logging.info('Waiting for cur_hw...')
     for i in range(0, config_timeout):
