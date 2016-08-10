@@ -46,7 +46,7 @@ from time import sleep
 from os.path import exists, split
 from json import dumps, loads
 from shlex import split as shsplit
-from subprocess import check_call, check_output, call
+from subprocess import check_call, check_output, call, CalledProcessError
 from socket import AF_UNIX, SOCK_STREAM, socket, gethostname
 
 import yaml
@@ -226,9 +226,9 @@ def main():
         raise Exception('Timed out while waiting for DB socket.')
 
     try:
-        check_call('systemctl start restd')
-    except:
-        raise Exception('Failed to start restd.')
+        check_output('systemctl start restd')
+    except CalledProcessError as error:
+        raise Exception('Failed to start restd: {}'.format(error.output))
 
     logging.info('Waiting for cur_hw...')
     for i in range(0, config_timeout):
