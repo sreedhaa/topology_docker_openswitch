@@ -225,19 +225,6 @@ def main():
     else:
         raise Exception('Timed out while waiting for DB socket.')
 
-    try:
-        if 'Active: active' not in check_output(
-            ['systemctl', 'status', 'restd']
-        ):
-            try:
-                check_output(['systemctl', 'start', 'restd'])
-            except CalledProcessError as error:
-                raise Exception(
-                    'Failed to start restd: {}'.format(error.output)
-                )
-    except:
-        pass
-
     logging.info('Waiting for cur_hw...')
     for i in range(0, config_timeout):
         if not cur_hw_is_set():
@@ -283,6 +270,39 @@ def main():
             break
     else:
         raise Exception('Timed out while waiting for final hostname.')
+
+    logging.info('Checking restd service status...')
+    output = ''
+    try:
+        output = check_output(
+            'systemctl status restd', shell=True
+        )
+    except CalledProcessError as e:
+        pass
+    if 'Active: active' not in output:
+        try:
+            logging.info('Starting restd daemon...')
+            check_output('systemctl start restd', shell=True)
+            logging.info('Checking restd service started...')
+            for i in range(0, config_timeout):
+                output = ''
+                output = check_output(
+                    'systemctl status restd', shell=True
+                )
+                if 'Active: active' not in output:
+                    sleep(0.1)
+                else:
+                    break
+            else:
+                raise Exception("Failed to start restd service")
+        except CalledProcessError as e:
+            raise Exception(
+                'Failed to start restd: {}'.format(e.output)
+            )
+        except Exception as error:
+            raise Exception (
+                error
+            )
 
 if __name__ == '__main__':
     main()
