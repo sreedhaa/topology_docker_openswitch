@@ -46,7 +46,7 @@ from time import sleep
 from os.path import exists, split
 from json import dumps, loads
 from shlex import split as shsplit
-from subprocess import check_call, check_output, call
+from subprocess import check_call, check_output, call, CalledProcessError
 from socket import AF_UNIX, SOCK_STREAM, socket, gethostname
 
 import yaml
@@ -271,6 +271,38 @@ def main():
     else:
         raise Exception('Timed out while waiting for final hostname.')
 
+    logging.info('Checking restd service status...')
+    output = ''
+    try:
+        output = check_output(
+            'systemctl status restd', shell=True
+        )
+    except CalledProcessError as e:
+        pass
+    if 'Active: active' not in output:
+        try:
+            logging.info('Starting restd daemon...')
+            check_output('systemctl start restd', shell=True)
+            logging.info('Checking restd service started...')
+            for i in range(0, config_timeout):
+                output = ''
+                output = check_output(
+                    'systemctl status restd', shell=True
+                )
+                if 'Active: active' not in output:
+                    sleep(0.1)
+                else:
+                    break
+            else:
+                raise Exception("Failed to start restd service")
+        except CalledProcessError as e:
+            raise Exception(
+                'Failed to start restd: {}'.format(e.output)
+            )
+        except Exception as error:
+            raise Exception (
+                error
+            )
 
 if __name__ == '__main__':
     main()
