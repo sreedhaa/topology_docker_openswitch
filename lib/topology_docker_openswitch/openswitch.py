@@ -54,6 +54,7 @@ import yaml
 config_timeout = 300
 ops_switchd_active_timeout = 60
 swns_netns = '/var/run/netns/swns'
+emulns_netns = '/var/run/netns/emulns'
 hwdesc_dir = '/etc/openswitch/hwdesc'
 db_sock = '/var/run/openvswitch/db.sock'
 switchd_pid = '/var/run/openvswitch/ops-switchd.pid'
@@ -92,33 +93,45 @@ def create_interfaces():
         ports_hwdesc = yaml.load(fd)
     hwports = [str(p['name']) for p in ports_hwdesc['ports']]
 
+    netns = check_output("ls /var/run/netns", shell=True)
     # Get list of already created ports
-    not_in_swns = check_output(shsplit(
+    not_in_netns = check_output(shsplit(
         'ls /sys/class/net/'
     )).split()
-    in_swns = check_output(shsplit(
-        'ip netns exec swns ls /sys/class/net/'
-    )).split()
+    if "emulns" not in netns:
+        in_netns = check_output(shsplit(
+            'ip netns exec swns ls /sys/class/net/'
+        )).split()
+    else:
+        in_netns = check_output(shsplit(
+            'ip netns exec emulns ls /sys/class/net/'
+        )).split()
     logging.info(
-            '  - Not in swns {not_in_swns} '.format(
+            '  - Not in swns/emulns {not_in_netns} '.format(
                 **locals()
             )
         )
     logging.info(
-            '  - In swns {in_swns} '.format(
+            '  - In swns/emulns {in_netns} '.format(
                 **locals()
             )
         )
 
     create_cmd_tpl = 'ip tuntap add dev {hwport} mode tap'
-    netns_cmd_tpl = 'ip link set {hwport} netns swns'
-    rename_int = 'ip link set {portlbl} name {hwport}'
+    netns_cmd_tpl_swns = 'ip link set {hwport} netns swns'
+    netns_fp_cmd_tpl_swns = ('ip link set {hwport} netns swns')
+    netns_cmd_tpl_emulns = ('ip netns exec swns ip link set {hwport} '
+                            'netns emulns')
+
+    netns_fp_cmd_tpl_emulns = ('ip link set {hwport} netns emulns')
+    rename_int = ('ip link set {portlbl} name {hwport}')
+    ns_exec = 'ip netns exec emulns '
 
     # Save port mapping information
     mapping_ports = {}
 
     # Map the port with the labels
-    for portlbl in not_in_swns:
+    for portlbl in not_in_netns:
         logging.info(
             '  - Port {portlbl} found'.format(
                 **locals()
@@ -129,13 +142,31 @@ def create_interfaces():
         hwport = hwports.pop(0)
         mapping_ports[portlbl] = hwport
         logging.info(
-            '  - Port {portlbl} moved to swns netns as {hwport}.'.format(
-                **locals()
-            )
+            '  - Port {portlbl} moved to swns/emulns netns as {hwport}.'
+            .format(**locals())
         )
         try:
             check_call(shsplit(rename_int.format(**locals())))
-            check_call(shsplit(netns_cmd_tpl.format(hwport=hwport)))
+            if 'emulns' not in netns:
+                check_call(shsplit(netns_fp_cmd_tpl_swns
+                           .format(hwport=hwport)))
+            else:
+                check_call(shsplit(netns_fp_cmd_tpl_emulns
+                           .format(hwport=hwport)))
+                check_call('{ns_exec} ip link set dev {hwport} up'
+                           .format(**locals()), shell=True)
+                out = check_output(
+                    '{ns_exec} echo port_add {hwport} '
+                    ' {port} | {ns_exec} '
+                    '/usr/bin/bm_tools/runtime_CLI.py --json '
+                    '/usr/share/ovs_p4_plugin/switch_bmv2.json '
+                    '--thrift-port 10001'.format(ns_exec=ns_exec,
+                                                 hwport=hwport,
+                                                 port=str(int(hwport) - 1)),
+                    shell=True
+                )
+                logging.info('BM port creation...')
+                logging.info(out)
         except:
             raise Exception('Failed to map ports with port labels')
 
@@ -145,20 +176,22 @@ def create_interfaces():
         json_file.write(dumps(mapping_ports))
 
     for hwport in hwports:
-        if hwport in in_swns:
+        if hwport in in_netns:
             logging.info('  - Port {} already present.'.format(hwport))
             continue
 
         logging.info('  - Port {} created.'.format(hwport))
         try:
-            check_call(shsplit(create_cmd_tpl.format(hwport=hwport)))
+            if "emulns" not in netns:
+                check_call(shsplit(create_cmd_tpl.format(hwport=hwport)))
         except:
             raise Exception('Failed to create tuntap')
 
         try:
-            check_call(shsplit(netns_cmd_tpl.format(hwport=hwport)))
+            if 'emulns' not in netns:
+                check_call(shsplit(netns_cmd_tpl_swns.format(hwport=hwport)))
         except:
-            raise Exception('Failed to move port to swns netns')
+            raise Exception('Failed to move port to swns/emulns netns')
     check_call(shsplit('touch /tmp/ops-virt-ports-ready'))
     logging.info('  - Ports readiness notified to the image')
 
@@ -202,7 +235,7 @@ def main():
         else:
             break
     else:
-        raise Exception('Timed out while waiting for swns.')
+        raise Exception('Timed out while waiting for swns/emulns.')
 
     logging.info('Waiting for hwdesc directory...')
     for i in range(0, config_timeout):
@@ -356,10 +389,8 @@ def log_commands(
 class OpenSwitchNode(DockerNode):
     """
     Custom OpenSwitch node for the Topology Docker platform engine.
-
     This custom node loads an OpenSwitch image and has vtysh as default
     shell (in addition to bash).
-
     See :class:`topology_docker.node.DockerNode`.
     """
 
