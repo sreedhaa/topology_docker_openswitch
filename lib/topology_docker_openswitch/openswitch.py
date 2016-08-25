@@ -407,8 +407,12 @@ class OpenSwitchNode(DockerNode):
         if binds is not None:
             container_binds.append(binds)
 
+        command = '/sbin/init'
+        if 'command' in kwargs.keys():
+            command = kwargs.pop('command')
+
         super(OpenSwitchNode, self).__init__(
-            identifier, image=image, command='/sbin/init',
+            identifier, image=image, command=command,
             binds=';'.join(container_binds), hostname='switch',
             network_mode='bridge', **kwargs
         )

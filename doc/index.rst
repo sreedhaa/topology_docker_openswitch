@@ -10,6 +10,11 @@ openswitch node for topology_docker
 
 A Topology OpenSwitch Node for topology_docker.
 
+Supported node attributes
+=========================
+
+#. ``command``: defines the command that will be used to start the docker
+   container, defaults to ``/sbin/init``.
 
 Documentation
 =============
